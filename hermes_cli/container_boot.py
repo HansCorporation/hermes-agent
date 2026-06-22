@@ -494,10 +494,16 @@ def main() -> int:
     # bind-mounted HERMES_HOME, both race to flock() the same s6-log lock
     # files under logs/gateways/<profile>/lock, producing "Resource busy"
     # failures and a restart storm. Detect the role from PID 1 argv and
-    # skip reconciliation in the dashboard container. No operator flag:
-    # the role is a fact about the container's command, and a flag can be
-    # forgotten in a hand-written manifest, reintroducing the storm.
-    if _is_dashboard_container(_read_container_argv()):
+    # skip reconciliation in the dashboard container.
+    #
+    # LOCAL PATCH: the argv detection assumes PID 1 is `/init`, but on this
+    # s6 image PID 1 is `s6-svscan`, so _is_dashboard_container() never
+    # matches and the dashboard container wrongly starts a redundant gateway
+    # (8080 SMS bind clash + Telegram double-poll). Accept an explicit
+    # HERMES_CONTAINER_ROLE=dashboard env (set on the dashboard compose
+    # service) as a reliable override, keeping argv autodetection as fallback.
+    _role = os.environ.get("HERMES_CONTAINER_ROLE", "").strip().lower()
+    if _role == "dashboard" or _is_dashboard_container(_read_container_argv()):
         print(
             "reconcile: skipping (dashboard container — does not need "
             "per-profile gateways)"

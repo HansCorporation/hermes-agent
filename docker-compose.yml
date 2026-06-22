@@ -35,6 +35,11 @@ services:
     network_mode: host
     volumes:
       - ~/.hermes:/opt/data
+      # Obsidian vault, kept in sync onto the host by Syncthing. Mounted
+      # read-write so the agent can read/search and also create/edit notes.
+      # NOTE: concurrent edits with Obsidian Sync can cause sync conflicts.
+      # OBSIDIAN_VAULT_PATH in ~/.hermes/.env points the obsidian skill here.
+      - ~/obsidian-vault:/opt/obsidian-vault:rw
     environment:
       - HERMES_UID=${HERMES_UID:-10000}
       - HERMES_GID=${HERMES_GID:-10000}
@@ -69,8 +74,25 @@ services:
       - gateway
     volumes:
       - ~/.hermes:/opt/data
+      # Same read-write Obsidian vault mount as the gateway, so agent sessions
+      # driven from Hermes Desktop (which talks to this dashboard backend) can
+      # read and edit the notes too.
+      - ~/obsidian-vault:/opt/obsidian-vault:rw
     environment:
       - HERMES_UID=${HERMES_UID:-10000}
       - HERMES_GID=${HERMES_GID:-10000}
-    # Localhost-only. For remote access, tunnel via `ssh -L 9119:localhost:9119`.
-    command: ["dashboard", "--host", "127.0.0.1", "--no-open"]
+      # This container only serves the web dashboard; it must NOT also start
+      # the messaging gateway (would clash with the `hermes` gateway on the
+      # SMS webhook port 8080 and double-poll Telegram). container_boot reads
+      # this to skip per-profile gateway reconciliation here.
+      - HERMES_CONTAINER_ROLE=dashboard
+    # Bound to the host's Tailscale MagicDNS name, which resolves to the
+    # tailscale0 IP (100.x) — so the dashboard listens only on the tailnet
+    # interface, never on the public/LAN interface. Binding to the *name*
+    # (not the IP) makes the app's anti-DNS-rebinding Host check accept the
+    # same name that `tailscale serve` forwards, so HTTPS-by-name works.
+    # No --insecure: the non-loopback bind engages the auth gate, satisfied
+    # by the basic-auth (username/password) provider configured in
+    # ~/.hermes/.env (HERMES_DASHBOARD_BASIC_AUTH_*). This gives Hermes
+    # Desktop a real "Sign in" flow instead of the ephemeral session token.
+    command: ["dashboard", "--host", "ubuntu-4gb-fsn1-1.tail89b3b2.ts.net", "--no-open"]
