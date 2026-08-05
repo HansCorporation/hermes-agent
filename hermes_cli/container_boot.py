@@ -323,7 +323,14 @@ def main() -> int:
     # A dashboard-only container must not reconcile: with a shared bind-mounted HERMES_HOME both
     # containers race to flock() the same s6-log files → "Resource busy" restart storm. Detected
     # from PID 1 argv, not an operator flag (a flag can be forgotten in a hand-written manifest).
-    if _is_dashboard_container(_read_container_argv()):
+    #
+    # LOCAL PATCH: the argv detection assumes PID 1 is `/init`, but on this s6 image PID 1 is
+    # `s6-svscan`, so _is_dashboard_container() never matches and the dashboard container wrongly
+    # starts a redundant gateway (8080 SMS bind clash + Telegram double-poll). Accept an explicit
+    # HERMES_CONTAINER_ROLE=dashboard env (set on the dashboard compose service) as a reliable
+    # override, keeping argv autodetection as fallback.
+    _role = os.environ.get("HERMES_CONTAINER_ROLE", "").strip().lower()
+    if _role == "dashboard" or _is_dashboard_container(_read_container_argv()):
         print("reconcile: skipping (dashboard container — does not need per-profile gateways)")
         return 0
 
