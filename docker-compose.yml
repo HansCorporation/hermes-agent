@@ -86,13 +86,28 @@ services:
       # SMS webhook port 8080 and double-poll Telegram). container_boot reads
       # this to skip per-profile gateway reconciliation here.
       - HERMES_CONTAINER_ROLE=dashboard
+      # Pinned session token (value in the gitignored project .env). In the
+      # no-login/loopback-token mode below, the dashboard normally mints a
+      # RANDOM _SESSION_TOKEN each start and injects it into the SPA HTML —
+      # fine for a browser, but Hermes Desktop ships its own frontend and uses
+      # the remote purely as an API backend, so it never reads that HTML token
+      # and every /api call 401s (renderer reset-loop). Pinning the token to a
+      # known value lets Desktop authenticate: paste the SAME value into
+      # Desktop's remote-connection "session token" field and it sends it as
+      # X-Hermes-Session-Token on every call. Browser access stays login-free
+      # (the SPA still gets the token injected into its HTML).
+      - HERMES_DASHBOARD_SESSION_TOKEN=${HERMES_DASHBOARD_SESSION_TOKEN}
     # Bound to the host's Tailscale MagicDNS name, which resolves to the
     # tailscale0 IP (100.x) — so the dashboard listens only on the tailnet
     # interface, never on the public/LAN interface. Binding to the *name*
     # (not the IP) makes the app's anti-DNS-rebinding Host check accept the
     # same name that `tailscale serve` forwards, so HTTPS-by-name works.
-    # No --insecure: the non-loopback bind engages the auth gate, satisfied
-    # by the basic-auth (username/password) provider configured in
-    # ~/.hermes/.env (HERMES_DASHBOARD_BASIC_AUTH_*). This gives Hermes
-    # Desktop a real "Sign in" flow instead of the ephemeral session token.
-    command: ["dashboard", "--host", "ubuntu-4gb-fsn1-1.tail89b3b2.ts.net", "--no-open"]
+    # VPN-as-auth: access is already restricted to the tailnet (binds to the
+    # 100.x MagicDNS address, no Funnel), so we treat the VPN as the auth
+    # boundary and skip the in-app login. The shim disables the auth gate
+    # before start; see ~/.hermes/dashboard_nologin.py (mounted at /opt/data).
+    # Desktop authenticates via the pinned HERMES_DASHBOARD_SESSION_TOKEN above.
+    # To restore the in-app basic-auth "Sign in" gate instead, swap to:
+    #   command: ["dashboard", "--host", "lynhacel-server-1.tailff0b7c.ts.net", "--port", "10001", "--no-open"]
+    # Port 10001 (not the 9119 default); hermes-workspace's .env HERMES_DASHBOARD_URL must match.
+    command: ["python", "/opt/data/dashboard_nologin.py", "--host", "lynhacel-server-1.tailff0b7c.ts.net", "--port", "10001", "--no-open"]
